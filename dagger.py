@@ -36,25 +36,35 @@ def generate_psychoacoustic_noise(audio, sr, window_size=1024, hop_size=512, noi
 
     return noise_audio
 
-def apply_noise_to_audio(audio, noise):
-    """
-    Apply the generated noise to the original audio.
-    """
-    return audio + noise
-
 def main(args):
-    # Load the WAV file
+    # Load the WAV file (supports mono/stereo)
     print(f"Loading input file: {args.input_file}")
-    audio, sr = librosa.load(args.input_file, sr=None, mono=True)
+    audio, sr = librosa.load(args.input_file, sr=None, mono=False)  # mono=False for multi-channel
 
-    # Generate psychoacoustic noise
+    # Generate noise for each channel
     print(f"Generating noise with scale: {args.noise_scale}")
-    noise = generate_psychoacoustic_noise(
-        audio, sr, window_size=args.window_size, hop_size=args.hop_size, noise_scale=args.noise_scale
-    )
+    if audio.ndim == 1:
+        # Mono audio
+        noise = generate_psychoacoustic_noise(
+            audio, sr, window_size=args.window_size, hop_size=args.hop_size, noise_scale=args.noise_scale
+        )
+        perturbed_audio = audio + noise
+    else:
+        # Multi-channel audio (e.g., stereo)
+        num_channels = audio.shape[0]
+        noises = []
+        for channel_idx in range(num_channels):
+            channel = audio[channel_idx, :]
+            channel_noise = generate_psychoacoustic_noise(
+                channel, sr, window_size=args.window_size, hop_size=args.hop_size, noise_scale=args.noise_scale
+            )
+            noises.append(channel_noise)
 
-    # Apply noise to the original audio
-    perturbed_audio = apply_noise_to_audio(audio, noise)
+        # Combine noises and add to original audio
+        noise = np.stack(noises, axis=0)
+        perturbed_audio = audio + noise
+        # Transpose to (samples, channels) for saving
+        perturbed_audio = perturbed_audio.T
 
     # Normalize the audio to prevent clipping
     perturbed_audio = np.clip(perturbed_audio, -1.0, 1.0)
